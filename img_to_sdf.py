@@ -9,26 +9,64 @@ def img_pre_process(file_name, file_type, scale=200):
     proc_filename = file_name + "_proc" + file_type
     cv2.imwrite(proc_filename, proc_img)
 
-def obstacle_link(start, end, y, model):
-    length = end - start
-    width = 1
-    x = (start + end) / 2.0
+def find_obstacles(file_name, file_type):
+    obstacle_list = [] # pattern: [left, right, up, down]
+
+    img = Image.open(file_name + "_proc" + file_type)
+    img = img.convert("L")
+
+    width, height = img.size
+
+    for y in range(height):
+        has_wall = False
+        for x in range(width):
+            pixel_value = img.getpixel((x, y))
+            # New Obstacle
+            if not has_wall and pixel_value == BLACK:
+                has_wall = True
+                obstacle_list.append([x, x, y, y])
+            # Continue Obstacle
+            elif has_wall and pixel_value == BLACK:
+                pass
+            # End Obstacle
+            elif has_wall and pixel_value == WHITE:
+                has_wall = False
+                obstacle_list[-1][1] = x-1
+                print("Obstacle's left: {}, right: {}, up: {}, down: {}".format(obstacle_list[-1][0], 
+                                                                                obstacle_list[-1][1], 
+                                                                                obstacle_list[-1][2], 
+                                                                                obstacle_list[-1][3]))
+            elif has_wall and x == width-1:
+                has_wall = False
+                obstacle_list[-1][1] = x
+                print("Obstacle's left: {}, right: {}, up: {}, down: {}".format(obstacle_list[-1][0], 
+                                                                                obstacle_list[-1][1], 
+                                                                                obstacle_list[-1][2], 
+                                                                                obstacle_list[-1][3]))
+    return obstacle_list
+
+def obstacle_link(left, right, up, down, model):
+
+    length = 2.0 if right - left < 1.0 else right - left
+    width = 2.0 
+    x = (left + right) / 2.0
+    y = (up + down) / 2.0
     wall_name = "Wall_{0}_{1}".format(x, y)
-    
+
     def transform_tags(parent):
         geometry = ET.SubElement(parent, "geometry")
         box = ET.SubElement(geometry, "box")
         size = ET.SubElement(box, "size")
-        size.text = "{0} {1} {2}".format(length * cell_scale, width * cell_scale, cell_height)
-        pose = ET.SubElement(collision, "pose", frame='')
-        pose.text = "{0} {1} {2} 0 -0 0".format(x * cell_scale, y * cell_scale, cell_height/2.0)
+        size.text = "{0} {1} {2}".format(length * CELL_SCALE, width * CELL_SCALE, CELL_HEIGHT)
+        pose = ET.SubElement(parent, "pose", frame='')
+        pose.text = "{0} {1} {2} 0 -0 0".format(x * CELL_SCALE, y * CELL_SCALE, CELL_HEIGHT/2.0)
     
     link = ET.SubElement(model, "link", name=wall_name)
     # collision
-    collision = ET.SubElement(link, "collision", name=wall_name + "_Collision")
+    collision = ET.SubElement(link, "collision", name=wall_name+"_Collision")
     transform_tags(collision)
     # visualization
-    visual = ET.SubElement(link, "visual", name=wall_name + "_Visual")
+    visual = ET.SubElement(link, "visual", name=wall_name+"_Visual")
     transform_tags(visual)
     # material
     material = ET.SubElement(visual, "material")
@@ -41,42 +79,19 @@ def obstacle_link(start, end, y, model):
     ET.SubElement(meta, "layer").text = "0"
     # position
     pose = ET.SubElement(link, "pose", frame='')
-    pose.text = "{0} {1} {2} 0 -0 0".format(x * cell_scale, y * cell_scale, cell_height/2.0)
+    pose.text = "{0} {1} {2} 0 -0 0".format(x * CELL_SCALE, y * CELL_SCALE, CELL_HEIGHT/2.0)
 
-def parse_jpg_to_sdf(file_name, file_type):
-    img = Image.open(file_name + "_proc" + file_type)
-    img = img.convert("L")
-
-    width, height = img.size
-
+def parse_jpg_to_sdf(file_name, obstacle_list):
     # Create the root element for the SDF file
     sdf_root = ET.Element("sdf", version="1.6")
-    model = ET.SubElement(sdf_root, "model", name="GridMap")
+    world = ET.SubElement(sdf_root, "world", name="GridMap")
+    model = ET.SubElement(world, "model", name="GridMap")
     pose = ET.SubElement(model, "pose", frame='')
     pose.text = "{0} {1} {2} 0 -0 0".format(0, 0, 0)
 
     # Loop through the image pixels
-    for y in range(height):
-        has_wall = False
-        start, end = 0.0, 0.0
-        for x in range(width):
-            pixel_value = img.getpixel((x, y))
-            # black pixel: wall's starting point
-            if pixel_value == 0 and not has_wall:
-                start = x
-                has_wall = True
-            # white pixel: wall's ending point
-            if pixel_value == 1 and has_wall:
-                end = x - cell_scale
-                obstacle_link(start, end, y, model)
-                print("end at free space: ({}, {})".format(x, y))
-                has_wall = False
-            # end of line: wall's ending point
-            if x == width-1 and has_wall:
-                end = x
-                obstacle_link(start, end, y, model)
-                print("end of line: {}".format(y))
-                has_wall = False
+    for obstacle in obstacle_list:
+        obstacle_link(obstacle[0], obstacle[1], obstacle[2], obstacle[3], model)
 
     ET.SubElement(model, "static").text = "1"
 
@@ -94,8 +109,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    cell_height = args.height
-    cell_scale = args.scale
+    CELL_HEIGHT = args.height
+    CELL_SCALE = args.scale
+
+    BLACK = 0
+    WHITE = 1
 
     img_pre_process(args.name, args.type, scale=args.size)
-    parse_jpg_to_sdf(args.name, args.type)
+    obstacle_list = find_obstacles(args.name, args.type)
+    parse_jpg_to_sdf(args.name, obstacle_list)
