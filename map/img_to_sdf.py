@@ -3,16 +3,16 @@ import cv2, argparse
 from PIL import Image
 
 def img_pre_process(file_name, file_type, scale=200):
-    origin_img = cv2.imread(file_name + file_type, cv2.IMREAD_GRAYSCALE)
+    origin_img = cv2.imread(file_name + '.' + file_type, cv2.IMREAD_GRAYSCALE)
     proc_img = cv2.resize(origin_img, (scale, scale), interpolation=cv2.INTER_NEAREST)
     proc_img = cv2.cvtColor(proc_img, cv2.COLOR_GRAY2BGR)
-    proc_filename = file_name + "_proc" + file_type
+    proc_filename = file_name + "_proc." + file_type
     cv2.imwrite(proc_filename, proc_img)
 
 def find_obstacles(file_name, file_type):
     obstacle_list = [] # pattern: [left, right, up, down]
 
-    img = Image.open(file_name + "_proc" + file_type)
+    img = Image.open(file_name + "_proc." + file_type)
     img = img.convert("L")
 
     width, height = img.size
